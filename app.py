@@ -91,5 +91,6 @@ def create_app(db_url=None):
     api.register_blueprint(TagBlueprint)
     api.register_blueprint(UserBlueprint)
 
+
     return app
 
