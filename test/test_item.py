@@ -1,4 +1,3 @@
-# Test creating an item
 import pytest
 
 
