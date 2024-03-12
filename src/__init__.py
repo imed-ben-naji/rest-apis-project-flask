@@ -1,0 +1,108 @@
+import os
+
+from flask import Flask, jsonify
+from flask_smorest import Api
+from flask_jwt_extended import JWTManager
+from flask_migrate import Migrate
+from dotenv import load_dotenv
+from src.utils.oidc import oidc
+
+from src.utils.db import db
+from src.utils.blocklist import BLOCKLIST
+
+from src.controllers import ItemBlueprint
+from src.controllers import StoreBlueprint
+from src.controllers import TagBlueprint
+from src.controllers import UserBlueprint
+from src.utils.oidc_route import blp as OIDCBlueprint
+
+def create_app(db_url=None):
+    app = Flask(__name__)
+    # load_dotenv()
+
+    app.config['PROPAGATE_EXCEPTIONS'] = True
+    app.config['API_TITLE'] = 'Stores REST API'
+    app.config['API_VERSION'] = 'v1'
+    app.config['OPENAPI_VERSION'] = '3.0.2'
+    app.config['OPENAPI_URL_PREFIX'] = '/'
+    app.config['OPENAPI_SWAGGER_UI_PATH'] = '/swagger_ui'
+    app.config['OPENAPI_SWAGGER_UI_URL'] = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist/'
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url or os.getenv('DATABASE_URL', 'sqlite:///data.db')
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    app.secret_key = 'supersecretkey'
+    app.config['OIDC_CLIENT_SECRETS'] = 'oidc-config.json'
+    app.config['OIDC_SCOPES'] = 'openid email profile'
+    app.config['OIDC_ID_TOKEN_COOKIE_SECURE'] = False
+    app.config['OIDC_USER_INFO_ENABLED'] = True
+    app.config['OIDC_INTROSPECTION_AUTH_METHOD'] = 'client_secret_post'
+
+
+    db.init_app(app)
+    oidc.init_app(app)
+    migrate = Migrate(app, db)
+    
+    api = Api(app)
+
+    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET', 'jwt-secret')
+    
+    jwt = JWTManager(app)
+
+    @jwt.token_in_blocklist_loader
+    def check_if_token_in_blocklist(jwt_header, jwt_payload):
+        return jwt_payload['jti'] in BLOCKLIST
+
+    @jwt.revoked_token_loader
+    def revoked_token_callback(jwt_header, jwt_payload):
+        return (
+            jsonify({'description': 'Token has been revoked.', 'error': 'token_revoked'}),
+            401,
+        )
+    
+    @jwt.needs_fresh_token_loader
+    def token_not_fresh_callback(jwt_header, jwt_payload):
+        return (
+            jsonify({'description': 'The token is not fresh.', 'error': 'fresh_token_required'}),
+            401,
+        )
+    
+    @jwt.additional_claims_loader
+    def add_claims_to_access_token(identity):
+        # look in the database and see whether the user is an admin or not
+        if identity == 4:
+            return {'is_admin': True}
+        return {'is_admin': False}
+    
+    @jwt.expired_token_loader
+    def expired_token_callback(jwt_header, jwt_payload):
+        return (
+            jsonify({'message': 'The token has expired.', 'error': 'token_expired'}),
+            401,
+        )
+    
+    @jwt.invalid_token_loader
+    def invalid_token_callback(error):
+        return (
+            jsonify({'message': 'Signature verification failed.', 'error': 'invalid_token'}),
+            401,
+        )
+    
+    @jwt.unauthorized_loader
+    def missing_token_callback(error):
+        return (
+            jsonify({'description': 'Request does not contain an access token.', 'error': 'authorization_required'}),
+            401,
+        )
+    
+
+    # with app.app_context():
+    #     db.create_all()
+
+
+    api.register_blueprint(ItemBlueprint)
+    api.register_blueprint(StoreBlueprint)
+    api.register_blueprint(TagBlueprint)
+    api.register_blueprint(UserBlueprint)
+    api.register_blueprint(OIDCBlueprint)
+
+    return app

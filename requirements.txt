@@ -6,3 +6,9 @@ flask-sqlalchemy
 flask-jwt-extended
 passlib
 flask-migrate
+flask-oidc
+oauth2client
+config
+gunicorn
+psycopg2
+pytest

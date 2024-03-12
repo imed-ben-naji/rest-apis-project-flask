@@ -1,4 +1,4 @@
-from db import db
+from src.utils.db import db
 
 class TagModel(db.Model):
     __tablename__ = 'tags'

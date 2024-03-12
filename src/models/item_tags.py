@@ -1,4 +1,4 @@
-from db import db
+from src.utils.db import db
 
 
 class ItemTags(db.Model):
